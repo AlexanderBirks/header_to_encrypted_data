@@ -1,0 +1,63 @@
+-(NSData*) encryptDataAddingHeader:(NSData*)dataToEncrypt key:(NSData*)enKey {
+    // Format is:
+    // "nnnnnn" in hex
+    // followed by one byte for the IV length.
+    // followed by the encrypted data
+    
+    // define the header tag if you wish? I prefer obscuring this
+    uint8_t customHeader[6] = {0x6e, 0x6e, 0x6e, 0x6e, 0x6e, 0x6e};
+
+    // get a random IV
+    NSData *createdIV = [self generateRandomIV];
+    
+    // encrypt
+    NSData* encryptedData = [self encryptedDataFromData:dataToEncrypt key:enKey withIV:createdIV];
+
+    // IV LENGTH
+    uint8_t ivLength = [createdIV length];
+    
+    // LENGTHS TOTAL
+    NSInteger combinedLength = [encryptedData length] + 7 + [createdIV length]; // 7 = header + tag
+
+    // COMPILE
+    NSMutableData* completedData = [[NSMutableData alloc] initWithCapacity:combinedLength];
+    [completedData appendBytes:&customHeader length:6];
+    [completedData appendBytes:&ivLength length:1];
+    [completedData appendData:createdIV];
+    [completedData appendData:encryptedData];
+    
+    return [NSData dataWithData:completedData];
+}
+
+-(NSData*) decryptCustomHeadedEncryptedData:(NSData*)encryptedData key:(NSData*)enKey {
+
+    // Same as above
+    uint8_t customHeader[6] = {0x6e, 0x6e, 0x6e, 0x6e, 0x6e, 0x6e};
+    
+    // remove header
+    NSRange rangeOfHeader = NSMakeRange(0, 6);
+    NSData *refinedData = [encryptedData subdataWithRange:rangeOfHeader];
+    const unsigned char* bytes = [refinedData bytes];
+    
+    if ([refinedData isEqualToData:[NSData dataWithBytes:customHeader length:6]]) {
+        
+        // length is always one byte, representing a number less than 255
+        NSRange rangeOfIVLength = NSMakeRange(6, 1);
+        NSData *refinedDataLength = [encryptedData subdataWithRange:rangeOfIVLength];
+        NSData *lengthData = [NSData dataWithBytes:refinedDataLength.bytes length:1];
+        const unsigned char* lengthBytes = [lengthData bytes];
+        // length
+        uint8_t l = lengthBytes[0];
+        
+        // IV
+        NSRange rangeIV = NSMakeRange(7, l);
+        NSData *refinedDataIV = [encryptedData subdataWithRange:rangeIV];
+        NSData *IVData = [NSData dataWithBytes:refinedDataIV.bytes length:l];
+        
+        // final
+        NSRange rangeEncryptedData = NSMakeRange(7 + l, [encryptedData length] - (7 + l));
+        NSData *refinedEncryptedData = [encryptedData subdataWithRange:rangeEncryptedData];
+        
+        return [self decryptedDataFromData:refinedEncryptedData key:enKey withIV:IVData];
+    }
+}
